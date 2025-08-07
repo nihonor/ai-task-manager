@@ -1,0 +1,304 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "AI Task Manager API",
+    "version": "1.0.0",
+    "description": "API documentation for the AI Task Manager SaaS platform."
+  },
+  "servers": [
+    { "url": "http://localhost:5000/api" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "tags": [
+    { "name": "Auth" },
+    { "name": "Tasks" },
+    { "name": "KPIs" },
+    { "name": "Dashboard" },
+    { "name": "Chat" },
+    { "name": "Notifications" }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "enum": ["employer", "employee"] },
+                  "department": { "type": "string" },
+                  "locale": { "type": "string" }
+                },
+                "required": ["name", "email", "password", "role"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User registered successfully." },
+          "400": { "description": "Validation error." },
+          "409": { "description": "Email already in use." }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login and receive JWT token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful, returns JWT token." },
+          "400": { "description": "Validation error." },
+          "401": { "description": "Invalid credentials." }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "tags": ["Tasks"],
+        "summary": "Get all tasks (employer) or own tasks (employee)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of tasks." },
+          "401": { "description": "Unauthorized." }
+        }
+      },
+      "post": {
+        "tags": ["Tasks"],
+        "summary": "Create/assign a new task (employer only)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "assignedTo": { "type": "string" },
+                  "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+                  "deadline": { "type": "string", "format": "date-time" },
+                  "industryTemplate": { "type": "string" }
+                },
+                "required": ["title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Task created." },
+          "400": { "description": "Validation error." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/tasks/{id}/complete": {
+      "patch": {
+        "tags": ["Tasks"],
+        "summary": "Mark a task as completed (employee only)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Task marked as completed." },
+          "404": { "description": "Task not found." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/tasks/{id}/comment": {
+      "post": {
+        "tags": ["Tasks"],
+        "summary": "Add a comment to a task",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string" }
+                },
+                "required": ["text"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Comment added." },
+          "404": { "description": "Task not found." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/kpis": {
+      "get": {
+        "tags": ["KPIs"],
+        "summary": "Get all KPIs (employer) or own KPIs (employee)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of KPIs." },
+          "401": { "description": "Unauthorized." }
+        }
+      },
+      "post": {
+        "tags": ["KPIs"],
+        "summary": "Create a new KPI (employer only)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "targetValue": { "type": "number" },
+                  "assignedTo": { "type": "string" },
+                  "period": { "type": "string", "enum": ["weekly", "monthly", "quarterly", "yearly"] }
+                },
+                "required": ["name", "targetValue", "assignedTo"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "KPI created." },
+          "400": { "description": "Validation error." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/kpis/{id}/progress": {
+      "patch": {
+        "tags": ["KPIs"],
+        "summary": "Update KPI progress (employee only)",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentValue": { "type": "number" }
+                },
+                "required": ["currentValue"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "KPI progress updated." },
+          "404": { "description": "KPI not found." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/dashboard/stats": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get dashboard statistics (employer only)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Dashboard stats." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/chat/{taskId}": {
+      "get": {
+        "tags": ["Chat"],
+        "summary": "Get all chat messages for a task",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "List of chat messages." },
+          "401": { "description": "Unauthorized." }
+        }
+      },
+      "post": {
+        "tags": ["Chat"],
+        "summary": "Send a chat message within a task",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": { "type": "string" }
+                },
+                "required": ["message"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Message sent." },
+          "400": { "description": "Validation error." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Get notifications for the current user",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of notifications." },
+          "401": { "description": "Unauthorized." }
+        }
+      }
+    }
+  }
+}
