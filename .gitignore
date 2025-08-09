@@ -34,3 +34,6 @@ build/
 
 # Swagger generated files (if any)
 swagger-output.json
+
+# Uploaded files
+uploads/
