@@ -59,10 +59,7 @@ app.use((req, res, next) => {
 });
 
 // MongoDB connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-task-manager', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => console.log('MongoDB connected')).catch(err => console.error('MongoDB error:', err));
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-task-manager').then(() => console.log('MongoDB connected')).catch(err => console.error('MongoDB error:', err));
 
 // WebSocket middleware
 app.use((req, res, next) => {

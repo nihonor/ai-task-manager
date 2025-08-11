@@ -149,10 +149,10 @@ async function seedDatabase() {
     // Create users with hashed passwords first
     const users = [];
     for (const userData of sampleUsers) {
-      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      // const hashedPassword = await bcrypt.hash(userData.password, 10); # This generates logic failure cz there's pre-save in User model 
       const user = new User({
         ...userData,
-        password: hashedPassword,
+        //password, # send password as raw cz it will be hashed on-save
         department: departments[0]._id // Assign to Engineering department
       });
       users.push(await user.save());
