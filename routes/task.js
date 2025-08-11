@@ -263,91 +263,183 @@ router.patch('/:id/status', authenticateJWT, async (req, res) => {
   }
 });
 
+// PATCH /api/tasks/:id/complete - Update task completion
+router.patch('/:id/complete', authenticateJWT, async (req, res) => {
+  try {
+    const { progress, notes, blockers, files, status } = req.body;
+    
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Check permissions
+    if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+      if (task.assignedTo.toString() !== req.user._id.toString() && 
+          task.createdBy.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+    }
+
+    // Update task fields
+    const updateData = {};
+    if (progress !== undefined) updateData.progress = progress;
+    if (status) updateData.status = status;
+    if (notes) updateData.notes = notes;
+    
+    // Handle blockers
+    if (blockers && blockers.length > 0) {
+      const newBlockers = blockers.map(blocker => ({
+        description: blocker,
+        reportedBy: req.user._id,
+        reportedAt: new Date(),
+        resolved: false
+      }));
+      updateData.blockers = [...(task.blockers || []), ...newBlockers];
+    }
+    
+    // Handle file attachments
+    if (files && files.length > 0) {
+      const newAttachments = files.map(file => ({
+        url: file.url,
+        filename: file.filename,
+        fileType: file.fileType,
+        fileSize: file.fileSize,
+        uploadedAt: new Date(),
+        uploadedBy: req.user._id
+      }));
+      updateData.attachments = [...(task.attachments || []), ...newAttachments];
+    }
+    
+    // Update completion date if status is completed
+    if (status === 'completed') {
+      updateData.completedAt = new Date();
+      updateData.completedBy = req.user._id;
+      updateData.progress = 100;
+    }
+    
+    updateData.updatedAt = new Date();
+
+    const updatedTask = await Task.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('assignedTo', 'name email avatar')
+     .populate('assignedBy', 'name email')
+     .populate('project', 'name code')
+     .populate('team', 'name');
+
+    // Emit real-time update
+    if (req.io) {
+      req.io.to(`user-${updatedTask.assignedTo._id}`).emit('task-updated', updatedTask);
+      if (updatedTask.team) req.io.to(`team-${updatedTask.team._id}`).emit('task-updated', updatedTask);
+    }
+
+    res.json(updatedTask);
+  } catch (err) {
+    res.status(500).json({ message: 'Task completion update failed', error: err.message });
+  }
+});
+
 // PATCH /api/tasks/:id/progress - Update task progress
 router.patch('/:id/progress', authenticateJWT, async (req, res) => {
   try {
     const { progress, notes } = req.body;
-    const task = await Task.findById(req.params.id);
     
+    const task = await Task.findById(req.params.id);
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Check permissions
     if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-      if (task.assignedTo.toString() !== req.user._id.toString()) {
+      if (task.assignedTo.toString() !== req.user._id.toString() && 
+          task.createdBy.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: 'Access denied' });
       }
     }
 
-    task.progress = Math.min(100, Math.max(0, progress));
-    
-    if (notes) {
-      task.comments.push({
-        user: req.user._id,
-        text: `Progress updated to ${progress}%: ${notes}`,
-        type: 'progress_update'
-      });
-    }
+    const updateData = { progress, updatedAt: new Date() };
+    if (notes) updateData.notes = notes;
 
-    await task.save();
+    const updatedTask = await Task.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('assignedTo', 'name email avatar')
+     .populate('assignedBy', 'name email')
+     .populate('project', 'name code')
+     .populate('team', 'name');
 
     // Emit real-time update
     if (req.io) {
-      req.io.to(`user-${task.assignedTo}`).emit('task-progress-updated', { taskId: task._id, progress });
-      if (task.team) req.io.to(`team-${task.team}`).emit('task-progress-updated', { taskId: task._id, progress });
+      req.io.to(`user-${updatedTask.assignedTo._id}`).emit('task-progress-updated', updatedTask);
+      if (updatedTask.team) req.io.to(`team-${updatedTask.team._id}`).emit('task-progress-updated', updatedTask);
     }
 
-    res.json(task);
+    res.json(updatedTask);
   } catch (err) {
-    res.status(500).json({ message: 'Progress update failed', error: err.message });
+    res.status(500).json({ message: 'Task progress update failed', error: err.message });
   }
 });
 
-// POST /api/tasks/:id/complete - Mark task as completed
-router.post('/:id/complete', authenticateJWT, async (req, res) => {
+// PATCH /api/tasks/:id/blockers - Add or resolve blockers
+router.patch('/:id/blockers', authenticateJWT, async (req, res) => {
   try {
-    const { notes, actualHours, quality } = req.body;
-    const task = await Task.findById(req.params.id);
+    const { action, blockerId, description, resolved } = req.body;
     
+    const task = await Task.findById(req.params.id);
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Check permissions
     if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-      if (task.assignedTo.toString() !== req.user._id.toString()) {
+      if (task.assignedTo.toString() !== req.user._id.toString() && 
+          task.createdBy.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: 'Access denied' });
       }
     }
 
-    task.status = 'completed';
-    task.progress = 100;
-    task.completedAt = new Date();
-    task.completedBy = req.user._id;
-    
-    if (actualHours) task.actualHours = actualHours;
-    if (quality) task.quality = quality;
-    
-    if (notes) {
-      task.comments.push({
-        user: req.user._id,
-        text: `Task completed: ${notes}`,
-        type: 'completion'
-      });
+    let updateData = { updatedAt: new Date() };
+
+    if (action === 'add') {
+      const newBlocker = {
+        description,
+        reportedBy: req.user._id,
+        reportedAt: new Date(),
+        resolved: false
+      };
+      updateData.blockers = [...(task.blockers || []), newBlocker];
+    } else if (action === 'resolve' && blockerId) {
+      const blockers = task.blockers || [];
+      const blockerIndex = blockers.findIndex(b => b._id.toString() === blockerId);
+      if (blockerIndex !== -1) {
+        blockers[blockerIndex].resolved = resolved;
+        blockers[blockerIndex].resolvedAt = resolved ? new Date() : null;
+        blockers[blockerIndex].resolvedBy = resolved ? req.user._id : null;
+        updateData.blockers = blockers;
+      }
     }
 
-    await task.save();
+    const updatedTask = await Task.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('assignedTo', 'name email avatar')
+     .populate('assignedBy', 'name email')
+     .populate('project', 'name code')
+     .populate('team', 'name');
 
     // Emit real-time update
     if (req.io) {
-      req.io.to(`user-${task.assignedTo}`).emit('task-completed', { taskId: task._id });
-      if (task.team) req.io.to(`team-${task.team}`).emit('task-completed', { taskId: task._id });
+      req.io.to(`user-${updatedTask.assignedTo._id}`).emit('task-blocker-updated', updatedTask);
+      if (updatedTask.team) req.io.to(`team-${updatedTask.team._id}`).emit('task-blocker-updated', updatedTask);
     }
 
-    res.json({ message: 'Task marked as completed', task });
+    res.json(updatedTask);
   } catch (err) {
-    res.status(500).json({ message: 'Task completion failed', error: err.message });
+    res.status(500).json({ message: 'Task blocker update failed', error: err.message });
   }
 });
 

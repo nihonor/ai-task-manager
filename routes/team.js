@@ -8,9 +8,12 @@ const { authenticateJWT, authorizeRoles } = require('../middleware/auth');
 // GET /api/team/members - Get all team members
 router.get('/members', authenticateJWT, async (req, res) => {
   try {
-    const { teamId, departmentId, role, status = 'active' } = req.query;
+    const { teamId, departmentId, role, status } = req.query;
     
-    let filter = { status };
+    let filter = {};
+    
+    // Only apply status filter if status is provided and not empty
+    if (status && status.trim() !== '') filter.status = status;
     
     if (teamId) filter.team = teamId;
     if (departmentId) filter.department = departmentId;
@@ -27,18 +30,39 @@ router.get('/members', authenticateJWT, async (req, res) => {
       }
     }
 
+    // Debug logging
+
+
+    // First, let's check if users exist with just the team filter
+    const teamUsers = await User.find({ team: teamId || filter.team });
+    console.log(`📊 Users found with just team filter: ${teamUsers.length}`);
+    
+    if (teamUsers.length > 0) {
+      console.log('👥 Team users:', teamUsers.map(u => ({ name: u.name, email: u.email, status: u.status })));
+    }
+
     const members = await User.find(filter)
       .select('name email avatar role department team status lastActive')
       .populate('team', 'name')
       .populate('department', 'name')
       .sort({ name: 1 });
 
+    console.log(`📊 Found ${members.length} members for full filter:`, filter);
+
     res.json({
       message: 'Team members retrieved successfully',
       members,
-      total: members.length
+      total: members.length,
+      filter: filter, // Include filter in response for debugging
+      userRole: req.user.role,
+      debug: {
+        teamUsersCount: teamUsers.length,
+        fullFilterCount: members.length,
+        teamId: teamId || filter.team
+      }
     });
   } catch (err) {
+    console.error('❌ Error fetching team members:', err);
     res.status(500).json({ message: 'Failed to fetch team members', error: err.message });
   }
 });
@@ -51,8 +75,7 @@ router.get('/members/:id', authenticateJWT, async (req, res) => {
     const member = await User.findById(id)
       .select('-password')
       .populate('team', 'name description')
-      .populate('department', 'name description')
-      .populate('roles', 'name permissions');
+      .populate('department', 'name description');
 
     if (!member) {
       return res.status(404).json({ message: 'Team member not found' });
@@ -94,12 +117,22 @@ router.get('/members/:id', authenticateJWT, async (req, res) => {
 // POST /api/team/members - Add new team member
 router.post('/members', authenticateJWT, authorizeRoles('admin', 'manager'), async (req, res) => {
   try {
-    const { email, teamId, departmentId, role, position } = req.body;
+    const { email, userId, teamId, departmentId, role, position } = req.body;
     
-    // Check if user already exists
-    let user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found with this email' });
+    // Check if user already exists by email or userId
+    let user;
+    if (userId) {
+      user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found with this ID' });
+      }
+    } else if (email) {
+      user = await User.findOne({ email });
+      if (!user) {
+        return res.status(404).json({ message: 'User not found with this email' });
+      }
+    } else {
+      return res.status(400).json({ message: 'Either email or userId must be provided' });
     }
 
     // Check if user is already in a team
@@ -107,11 +140,11 @@ router.post('/members', authenticateJWT, authorizeRoles('admin', 'manager'), asy
       return res.status(400).json({ message: 'User is already part of a team' });
     }
 
-    // Update user's team and role
+    // Update user's team and role (only update provided fields)
     user.team = teamId;
-    user.department = departmentId;
-    user.role = role;
-    user.position = position;
+    if (departmentId) user.department = departmentId;
+    if (role) user.role = role;
+    if (position) user.position = position;
     user.status = 'active';
     
     await user.save();
@@ -415,28 +448,95 @@ router.post('/reports', authenticateJWT, authorizeRoles('admin', 'manager'), asy
       return res.status(400).json({ message: 'Invalid report type' });
     }
 
-    // Generate report (placeholder implementation)
+    // Get actual team data
+    let teamFilter = {};
+    if (teamId) {
+      teamFilter._id = teamId;
+    } else if (req.user.role !== 'admin') {
+      // Managers can only generate reports for their own team
+      const user = await User.findById(req.user._id);
+      if (user.team) {
+        teamFilter._id = user.team;
+      }
+    }
+
+    const team = await Team.findOne(teamFilter).populate('members', 'name email role');
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    // Get team members count
+    const totalMembers = team.members.length;
+
+    // Get tasks for the team
+    const taskFilter = { team: team._id };
+    
+    // Apply timeframe filter
+    const now = new Date();
+    let startDate;
+    switch (timeframe) {
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'quarter':
+        startDate = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // Default to 30 days
+    }
+
+    const tasks = await Task.find({
+      ...taskFilter,
+      createdAt: { $gte: startDate }
+    });
+
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+    
+    // Calculate productivity based on completed tasks and time
+    const daysInPeriod = Math.ceil((now - startDate) / (1000 * 60 * 60 * 24));
+    const averageProductivity = daysInPeriod > 0 ? Math.round((completedTasks / daysInPeriod) * 10) : 0;
+
+    // Generate report with real data
     const report = {
       id: Date.now().toString(),
       type: reportType,
       timeframe,
       format,
-      teamId,
+      teamId: team._id,
       generatedAt: new Date().toISOString(),
       generatedBy: req.user._id,
       downloadUrl: `/api/reports/download/${Date.now()}`,
       summary: {
-        totalMembers: 0,
-        totalTasks: 0,
-        completionRate: 0,
-        averageProductivity: 0
+        totalMembers,
+        totalTasks,
+        completedTasks,
+        pendingTasks: tasks.filter(t => t.status === 'pending').length,
+        inProgressTasks: tasks.filter(t => t.status === 'in_progress').length,
+        completionRate,
+        averageProductivity: Math.min(averageProductivity, 100) // Cap at 100%
       },
       charts: includeCharts ? ['productivity-trend', 'task-distribution', 'member-performance'] : [],
-      recommendations: [
-        'Focus on high-priority tasks',
-        'Improve communication between team members',
-        'Consider implementing agile methodologies'
-      ]
+      recommendations: generateRecommendations(reportType, completionRate, totalTasks, totalMembers),
+      teamInfo: {
+        name: team.name,
+        description: team.description,
+        department: team.department,
+        manager: team.manager,
+        memberCount: totalMembers
+      },
+      periodInfo: {
+        startDate: startDate.toISOString(),
+        endDate: now.toISOString(),
+        daysInPeriod
+      }
     };
 
     // Emit real-time update
@@ -449,9 +549,62 @@ router.post('/reports', authenticateJWT, authorizeRoles('admin', 'manager'), asy
       report
     });
   } catch (err) {
+    console.error('❌ Error generating team report:', err);
     res.status(500).json({ message: 'Failed to generate team report', error: err.message });
   }
 });
+
+// Helper function to generate recommendations based on data
+function generateRecommendations(reportType, completionRate, totalTasks, totalMembers) {
+  const recommendations = [];
+  
+  if (completionRate < 50) {
+    recommendations.push('Focus on completing high-priority tasks first');
+    recommendations.push('Identify and resolve blockers that are slowing down progress');
+  } else if (completionRate < 80) {
+    recommendations.push('Maintain current momentum and focus on quality');
+    recommendations.push('Consider optimizing workflow processes');
+  } else {
+    recommendations.push('Excellent performance! Focus on maintaining high standards');
+    recommendations.push('Consider taking on additional challenges or mentoring others');
+  }
+
+  if (totalTasks === 0) {
+    recommendations.push('No tasks found for this period - consider creating new tasks');
+  }
+
+  if (totalMembers === 0) {
+    recommendations.push('Team has no members - consider adding team members');
+  } else if (totalMembers === 1) {
+    recommendations.push('Team has only one member - consider expanding the team');
+  }
+
+  // Add type-specific recommendations
+  switch (reportType) {
+    case 'performance':
+      recommendations.push('Set clear performance metrics and goals');
+      recommendations.push('Implement regular performance reviews');
+      break;
+    case 'productivity':
+      recommendations.push('Use time tracking tools to identify bottlenecks');
+      recommendations.push('Implement productivity techniques like Pomodoro');
+      break;
+    case 'workload':
+      recommendations.push('Balance workload distribution across team members');
+      recommendations.push('Monitor team capacity and avoid overloading');
+      break;
+    case 'skills':
+      recommendations.push('Identify skill gaps and plan training sessions');
+      recommendations.push('Encourage knowledge sharing between team members');
+      break;
+    case 'comprehensive':
+      recommendations.push('Review all aspects of team performance regularly');
+      recommendations.push('Set quarterly goals and track progress');
+      break;
+  }
+
+  return recommendations.slice(0, 5); // Return top 5 recommendations
+}
 
 // POST /api/manager/assign-task - Manager assign task
 router.post('/manager/assign-task', authenticateJWT, authorizeRoles('admin', 'manager'), async (req, res) => {
@@ -698,6 +851,24 @@ router.post('/manager/bulk-assign', authenticateJWT, authorizeRoles('admin', 'ma
     });
   } catch (err) {
     res.status(500).json({ message: 'Failed to perform bulk assignment', error: err.message });
+  }
+});
+
+// GET /api/team/debug - Debug endpoint to see all users and teams
+router.get('/debug', authenticateJWT, authorizeRoles('admin', 'manager'), async (req, res) => {
+  try {
+    const users = await User.find({}).select('name email role team department status');
+    const teams = await Team.find({}).select('name manager members department');
+    
+    res.json({
+      message: 'Debug data retrieved',
+      users,
+      teams,
+      totalUsers: users.length,
+      totalTeams: teams.length
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch debug data', error: err.message });
   }
 });
 

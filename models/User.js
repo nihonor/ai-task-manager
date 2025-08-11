@@ -17,6 +17,9 @@ const UserSchema = new mongoose.Schema({
   locale: { type: String, default: 'en' },
   timezone: { type: String, default: 'UTC' },
   notifications: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Notification' }],
+  // Password reset fields
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
   preferences: {
     theme: { type: String, enum: ['light', 'dark'], default: 'light' },
     emailNotifications: { type: Boolean, default: true },

@@ -4,6 +4,60 @@ const Task = require('../models/Task');
 const User = require('../models/User');
 const { authenticateJWT, authorizeRoles } = require('../middleware/auth');
 
+// Get user dashboard data (for all authenticated users)
+router.get('/', authenticateJWT, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    // Get user's tasks
+    const userTasks = await Task.find({
+      $or: [
+        { assignedTo: userId },
+        { createdBy: userId }
+      ]
+    }).populate('assignedTo', 'name email avatar')
+      .populate('assignedBy', 'name email')
+      .populate('project', 'name code')
+      .populate('team', 'name')
+      .populate('department', 'name')
+      .sort({ updatedAt: -1 });
+
+    // Calculate statistics
+    const totalTasks = userTasks.length;
+    const completedTasks = userTasks.filter(task => task.status === 'completed').length;
+    const pendingTasks = userTasks.filter(task => task.status === 'pending').length;
+    const overdueTasks = userTasks.filter(task => {
+      if (task.deadline && task.status !== 'completed') {
+        return new Date(task.deadline) < new Date();
+      }
+      return false;
+    }).length;
+
+    // Calculate productivity score (based on completed vs total tasks)
+    const productivityScore = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Get user stats
+    const user = await User.findById(userId);
+    const streakDays = user.stats?.currentStreak || 0;
+
+    const dashboardData = {
+      tasks: userTasks,
+      stats: {
+        totalTasks,
+        completedTasks,
+        pendingTasks,
+        overdueTasks,
+        productivityScore,
+        streakDays
+      }
+    };
+
+    res.json(dashboardData);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch dashboard data', error: err.message });
+  }
+});
+
 // Get dashboard stats (Employer only)
 router.get('/stats', authenticateJWT, authorizeRoles('employer'), async (req, res) => {
   try {

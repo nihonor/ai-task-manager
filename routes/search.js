@@ -157,7 +157,7 @@ router.get('/', authenticateJWT, async (req, res) => {
       resultCount: totalResults,
       searchTime: Date.now()
     });
-
+    
     res.json({
       message: 'Search completed successfully',
       results: {
@@ -260,7 +260,7 @@ router.get('/tasks', authenticateJWT, async (req, res) => {
       resultCount: total,
       searchTime: Date.now()
     });
-
+    
     res.json({
       message: 'Task search completed successfully',
       results: {
@@ -352,7 +352,7 @@ router.get('/users', authenticateJWT, async (req, res) => {
       resultCount: total,
       searchTime: Date.now()
     });
-
+    
     res.json({
       message: 'User search completed successfully',
       results: {
@@ -449,7 +449,7 @@ router.get('/messages', authenticateJWT, async (req, res) => {
       resultCount: total,
       searchTime: Date.now()
     });
-
+    
     res.json({
       message: 'Message search completed successfully',
       results: {

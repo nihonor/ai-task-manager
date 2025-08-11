@@ -6,7 +6,8 @@
     "description": "Comprehensive API documentation for the AI Task Manager SaaS platform with task management, AI features, team management, gamification, analytics, and more."
   },
   "servers": [
-    { "url": "http://localhost:3000/api" }
+    { "url": "http://localhost:5000/api", "description": "Development server" },
+    { "url": "https://api.moveit.com/api", "description": "Production server" }
   ],
   "components": {
     "securitySchemes": {
@@ -41,7 +42,7 @@
         "properties": {
           "name": { "type": "string" },
           "email": { "type": "string" },
-          "role": { "type": "string", "enum": ["admin", "manager", "employer", "employee", "team_lead", "viewer"] },
+          "role": { "type": "string", "enum": ["admin", "manager", "employee", "viewer"] },
           "department": { "type": "string" },
           "team": { "type": "string" },
           "position": { "type": "string" },
@@ -256,15 +257,40 @@
       "TimerSettings": {
         "type": "object",
         "properties": {
-          "userId": { "type": "string" },
-          "pomodoroDuration": { "type": "number", "minimum": 1, "maximum": 120 },
-          "shortBreakDuration": { "type": "number", "minimum": 1, "maximum": 30 },
-          "longBreakDuration": { "type": "number", "minimum": 1, "maximum": 60 },
-          "autoStartBreaks": { "type": "boolean" },
-          "autoStartPomodoros": { "type": "boolean" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        },
-        "required": ["userId", "pomodoroDuration", "shortBreakDuration", "longBreakDuration"]
+          "pomodoroTime": { "type": "number", "minimum": 1, "maximum": 120, "description": "Pomodoro session duration in minutes" },
+          "shortBreakTime": { "type": "number", "minimum": 1, "maximum": 30, "description": "Short break duration in minutes" },
+          "longBreakTime": { "type": "number", "minimum": 1, "maximum": 60, "description": "Long break duration in minutes" },
+          "autoStartBreaks": { "type": "boolean", "description": "Automatically start breaks after pomodoros" },
+          "autoStartPomodoros": { "type": "boolean", "description": "Automatically start pomodoros after breaks" },
+          "soundEnabled": { "type": "boolean", "description": "Enable/disable timer sounds" }
+        }
+      },
+      "TimerStats": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "object",
+            "properties": {
+              "pomodoros": { "type": "integer", "description": "Total number of completed pomodoros" },
+              "breaks": { "type": "integer", "description": "Total number of completed breaks" },
+              "focusTime": { "type": "integer", "description": "Total focus time in minutes" }
+            }
+          },
+          "today": {
+            "type": "object",
+            "properties": {
+              "pomodoros": { "type": "integer", "description": "Today's completed pomodoros" },
+              "focusTime": { "type": "integer", "description": "Today's focus time in minutes" }
+            }
+          },
+          "weekly": {
+            "type": "object",
+            "properties": {
+              "pomodoros": { "type": "integer", "description": "This week's completed pomodoros" },
+              "focusTime": { "type": "integer", "description": "This week's focus time in minutes" }
+            }
+          }
+        }
       },
       "FocusSession": {
         "type": "object",
@@ -673,6 +699,27 @@
           "refreshInterval": { "type": "number", "description": "Auto-refresh interval in seconds" }
         }
       },
+      "DashboardData": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Task" },
+            "description": "User's tasks"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "totalTasks": { "type": "integer", "description": "Total number of tasks" },
+              "completedTasks": { "type": "integer", "description": "Number of completed tasks" },
+              "pendingTasks": { "type": "integer", "description": "Number of pending tasks" },
+              "overdueTasks": { "type": "integer", "description": "Number of overdue tasks" },
+              "productivityScore": { "type": "integer", "description": "Productivity score (0-100)" },
+              "streakDays": { "type": "integer", "description": "Current streak of productive days" }
+            }
+          }
+        }
+      },
       "PrivacyPreferences": {
         "type": "object",
         "properties": {
@@ -1048,7 +1095,7 @@
                   "name": { "type": "string" },
                   "email": { "type": "string" },
                   "password": { "type": "string" },
-                  "role": { "type": "string", "enum": ["admin", "manager", "employer", "employee", "team_lead", "viewer"] },
+                  "role": { "type": "string", "enum": ["admin", "manager", "employee", "viewer"] },
                   "department": { "type": "string" },
                   "team": { "type": "string" },
                   "position": { "type": "string" },
@@ -1249,6 +1296,45 @@
           "200": { "description": "Google account connected" },
           "400": { "description": "Connection failed" },
           "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Change password (authenticated)",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentPassword": { "type": "string" },
+                  "newPassword": { "type": "string" }
+                },
+                "required": ["currentPassword", "newPassword"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Password changed successfully" },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Unauthorized or current password incorrect" }
+        }
+      }
+    },
+    "/auth/verify": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Verify JWT token and get user info",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Token verified successfully" },
+          "401": { "description": "Invalid token" },
+          "404": { "description": "User not found" }
         }
       }
     },
@@ -1464,7 +1550,7 @@
     "/tasks/{id}/progress": {
       "patch": {
         "tags": ["Tasks"],
-        "summary": "Update task progress",
+        "summary": "Update task progress with notes",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
@@ -1476,8 +1562,8 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "progress": { "type": "number", "minimum": 0, "maximum": 100 },
-                  "notes": { "type": "string" }
+                  "progress": { "type": "number", "minimum": 0, "maximum": 100, "description": "Task progress percentage" },
+                  "notes": { "type": "string", "description": "Optional notes about the progress update" }
                 },
                 "required": ["progress"]
               }
@@ -1485,10 +1571,21 @@
           }
         },
         "responses": {
-          "200": { "description": "Task progress updated successfully" },
+          "200": { 
+            "description": "Task progress updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
           "400": { "description": "Validation error" },
           "404": { "description": "Task not found" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Access denied" },
+          "500": { "description": "Internal server error" }
         }
       }
     },
@@ -1586,9 +1683,9 @@
       }
     },
     "/tasks/{id}/blockers": {
-      "post": {
+      "patch": {
         "tags": ["Tasks"],
-        "summary": "Add blockers to task",
+        "summary": "Add or resolve blockers for a task",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
@@ -1600,20 +1697,32 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "description": { "type": "string" },
-                  "type": { "type": "string", "enum": ["technical", "resource", "dependency", "other"] },
-                  "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
+                  "action": { "type": "string", "enum": ["add", "resolve"], "description": "Action to perform on blockers" },
+                  "blockerId": { "type": "string", "description": "Blocker ID (required for resolve action)" },
+                  "description": { "type": "string", "description": "Blocker description (required for add action)" },
+                  "resolved": { "type": "boolean", "description": "Whether blocker is resolved (for resolve action)" }
                 },
-                "required": ["description", "type"]
+                "required": ["action"]
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Blocker added successfully" },
+          "200": { 
+            "description": "Task blockers updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
           "400": { "description": "Validation error" },
           "404": { "description": "Task not found" },
-          "401": { "description": "Unauthorized" }
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Access denied" },
+          "500": { "description": "Internal server error" }
         }
       }
     },
@@ -1635,15 +1744,56 @@
     "/tasks/{id}/complete": {
       "patch": {
         "tags": ["Tasks"],
-        "summary": "Mark a task as completed (employee only)",
+        "summary": "Update task completion with progress, notes, blockers, and files",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "progress": { "type": "number", "minimum": 0, "maximum": 100, "description": "Task progress percentage" },
+                  "notes": { "type": "string", "description": "Completion notes or comments" },
+                  "blockers": { "type": "array", "items": { "type": "string" }, "description": "Array of blocker descriptions" },
+                  "files": { 
+                    "type": "array", 
+                    "items": { 
+                      "type": "object",
+                      "properties": {
+                        "url": { "type": "string" },
+                        "filename": { "type": "string" },
+                        "fileType": { "type": "string" },
+                        "fileSize": { "type": "number" }
+                      }
+                    },
+                    "description": "Array of file attachments"
+                  },
+                  "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "overdue", "blocked", "cancelled"], "description": "New task status" }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "Task marked as completed." },
-          "404": { "description": "Task not found." },
-          "401": { "description": "Unauthorized." }
+          "200": { 
+            "description": "Task completion updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" },
+          "404": { "description": "Task not found" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Access denied" },
+          "500": { "description": "Internal server error" }
         }
       }
     },
@@ -1741,6 +1891,27 @@
           "200": { "description": "KPI progress updated." },
           "404": { "description": "KPI not found." },
           "401": { "description": "Unauthorized." }
+        }
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get user dashboard data with tasks and statistics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { 
+            "description": "User dashboard data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardData"
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "500": { "description": "Internal server error" }
         }
       }
     },
@@ -3594,7 +3765,8 @@
                 "properties": {
                   "duration": { "type": "number", "minimum": 1, "description": "Timer duration in minutes" },
                   "type": { "type": "string", "enum": ["pomodoro", "short_break", "long_break", "custom"], "default": "pomodoro" },
-                  "taskId": { "type": "string", "description": "Associated task ID" }
+                  "taskId": { "type": "string", "description": "Associated task ID" },
+                  "mode": { "type": "string", "enum": ["pomodoro", "short-break", "long-break"], "description": "Timer mode" }
                 },
                 "required": ["duration"]
               }
@@ -3713,12 +3885,12 @@
     "/timer/sessions": {
       "get": {
         "tags": ["Timer"],
-        "summary": "Get timer sessions for a user",
+        "summary": "Get timer sessions for the authenticated user",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
-          { "name": "userId", "in": "query", "schema": { "type": "string", "description": "User ID to filter sessions" } },
-          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "paused", "completed", "stopped"], "description": "Filter by session status" } },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100, "description": "Maximum number of sessions to return" } }
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "paused", "completed"], "description": "Filter by session status" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100, "description": "Maximum number of sessions to return" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1, "description": "Page number for pagination" } }
         ],
         "responses": {
           "200": { 
@@ -3728,13 +3900,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "message": { "type": "string" },
                     "sessions": {
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/TimerSession"
                       }
-                    }
+                    },
+                    "total": { "type": "integer", "description": "Total number of sessions" },
+                    "page": { "type": "integer", "description": "Current page number" },
+                    "totalPages": { "type": "integer", "description": "Total number of pages" }
                   }
                 }
               }
@@ -3746,7 +3920,7 @@
       }
     },
     "/timer/settings": {
-      "post": {
+      "put": {
         "tags": ["Timer"],
         "summary": "Update timer settings",
         "security": [{ "bearerAuth": [] }],
@@ -3757,11 +3931,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "pomodoroDuration": { "type": "number", "minimum": 1, "maximum": 120, "description": "Pomodoro session duration in minutes" },
-                  "shortBreakDuration": { "type": "number", "minimum": 1, "maximum": 30, "description": "Short break duration in minutes" },
-                  "longBreakDuration": { "type": "number", "minimum": 1, "maximum": 60, "description": "Long break duration in minutes" },
+                  "pomodoroTime": { "type": "number", "minimum": 1, "maximum": 120, "description": "Pomodoro session duration in minutes" },
+                  "shortBreakTime": { "type": "number", "minimum": 1, "maximum": 30, "description": "Short break duration in minutes" },
+                  "longBreakTime": { "type": "number", "minimum": 1, "maximum": 60, "description": "Long break duration in minutes" },
                   "autoStartBreaks": { "type": "boolean", "description": "Automatically start breaks after pomodoros" },
-                  "autoStartPomodoros": { "type": "boolean", "description": "Automatically start pomodoros after breaks" }
+                  "autoStartPomodoros": { "type": "boolean", "description": "Automatically start pomodoros after breaks" },
+                  "soundEnabled": { "type": "boolean", "description": "Enable/disable timer sounds" }
                 }
               }
             }
@@ -3785,6 +3960,91 @@
             }
           },
           "400": { "description": "Validation error" },
+          "401": { "description": "Unauthorized" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/timer/resume": {
+      "post": {
+        "tags": ["Timer"],
+        "summary": "Resume a paused timer session",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sessionId": { "type": "string", "description": "Timer session ID to resume" }
+                },
+                "required": ["sessionId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { 
+            "description": "Timer resumed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "session": {
+                      "$ref": "#/components/schemas/TimerSession"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Validation error" },
+          "401": { "description": "Unauthorized" },
+          "404": { "description": "Session not found" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/timer/stats": {
+      "get": {
+        "tags": ["Timer"],
+        "summary": "Get timer statistics for the authenticated user",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { 
+            "description": "Timer statistics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimerStats"
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "500": { "description": "Internal server error" }
+        }
+      }
+    },
+    "/timer/current": {
+      "get": {
+        "tags": ["Timer"],
+        "summary": "Get current active timer session",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { 
+            "description": "Current timer session retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimerSession"
+                }
+              }
+            }
+          },
           "401": { "description": "Unauthorized" },
           "500": { "description": "Internal server error" }
         }
