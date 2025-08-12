@@ -149,7 +149,7 @@ async function seedDatabase() {
     // Create users with hashed passwords first
     const users = [];
     for (const userData of sampleUsers) {
-      // const hashedPassword = await bcrypt.hash(userData.password, 10); # This generates logic failure cz there's pre-save in User model 
+      // const hashedPassword = await bcrypt.hash(userData.password, 10); # This generates logic failure cz there's pre-save hashing in User model 
       const user = new User({
         ...userData,
         //password, # send password as raw cz it will be hashed on-save
